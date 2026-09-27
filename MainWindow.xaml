@@ -6,21 +6,19 @@
         xmlns:local="clr-namespace:Noise"
         xmlns:gif="https://github.com/XamlAnimatedGif/XamlAnimatedGif"
         mc:Ignorable="d"
-        Title="Noise" Height="1080" Width="1920" ShowInTaskbar="False" WindowStyle="None" ResizeMode="NoResize" WindowStartupLocation="CenterScreen" Topmost="True" Background="Transparent" AllowsTransparency="True" Loaded="Window_Loaded">
+        Title="Noise" ShowInTaskbar="False" WindowStyle="None" ResizeMode="NoResize" Topmost="True" Background="Transparent" AllowsTransparency="True" Loaded="Window_Loaded" WindowState="Maximized">
     <Grid>
-        <Image x:Name="tvOnSprite" HorizontalAlignment="Center" Height="310" VerticalAlignment="Bottom" Width="232" Source="/Assets/Sprites/tv_on.gif" gif:AnimationBehavior.SourceUri="/Assets/Sprites/tv_on.gif" Opacity="0"/>
-        <Image x:Name="tvOffSprite" HorizontalAlignment="Center" Height="310" VerticalAlignment="Bottom" Width="232" Source="/Assets/Sprites/tv_off.png" Opacity="0"/>
-        <Image x:Name="emergeSprite" gif:AnimationBehavior.RepeatBehavior="1x" HorizontalAlignment="Center" Height="310" VerticalAlignment="Bottom" Width="232" Source="/Assets/Sprites/emerge.gif" gif:AnimationBehavior.SourceUri="/Assets/Sprites/emerge.gif" gif:AnimationBehavior.AutoStart="False" Opacity="0"/>
+        <Image x:Name="tvOnSprite" HorizontalAlignment="Center" VerticalAlignment="Bottom" Height="310" Width="232" Source="/Assets/Sprites/tv_on.gif" gif:AnimationBehavior.SourceUri="/Assets/Sprites/tv_on.gif" Opacity="0"/>
+        <Image x:Name="tvOffSprite" HorizontalAlignment="Center" VerticalAlignment="Bottom" Height="310" Width="232" Source="/Assets/Sprites/tv_off.png" Opacity="0"/>
+        <Image x:Name="emergeSprite" HorizontalAlignment="Center" VerticalAlignment="Bottom" Height="310" Width="232" Source="/Assets/Sprites/emerge.gif" gif:AnimationBehavior.SourceUri="/Assets/Sprites/emerge.gif" gif:AnimationBehavior.RepeatBehavior="1x" gif:AnimationBehavior.AutoStart="False" Opacity="0"/>
 
-        <Image x:Name="noiseCursor" HorizontalAlignment="Left" Height="32" Margin="1060,999,0,0" VerticalAlignment="Top" Width="32" Source="/Assets/Sprites/pausecursor.png" gif:AnimationBehavior.SourceUri="/Assets/Sprites/cursor.gif" Opacity="0"/>
-        <Popup StaysOpen="True"
-           AllowsTransparency="True"
-           Placement="Absolute"
-           IsOpen="True">
+        <Image x:Name="noiseCursor" HorizontalAlignment="Left" VerticalAlignment="Top" Height="32" Width="32" Source="/Assets/Sprites/pausecursor.png" gif:AnimationBehavior.SourceUri="/Assets/Sprites/cursor.gif" Opacity="0"/>
+
+        <Popup StaysOpen="True" AllowsTransparency="True" Placement="Absolute" IsOpen="True">
             <Image x:Name="fireAlarmSprite" Height="59" Width="40" Source="/Assets/Sprites/firealarm.png" MouseLeftButtonDown="fireAlarmSprite_MouseDown"/>
         </Popup>
 
-        <Image x:Name="jumpscareGif" HorizontalAlignment="Left" Height="1080" VerticalAlignment="Top" Width="1920" gif:AnimationBehavior.SourceUri="/Assets/Sprites/jumpscare.gif" gif:AnimationBehavior.AutoStart="False"/>
-        <Image x:Name="fireAlarmGif" HorizontalAlignment="Left" Height="1080" VerticalAlignment="Top" Width="1920" gif:AnimationBehavior.SourceUri="/Assets/Sprites/firealarm.gif" gif:AnimationBehavior.AutoStart="False"/>
+        <Image x:Name="jumpscareGif" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Stretch="Fill" gif:AnimationBehavior.SourceUri="/Assets/Sprites/jumpscare.gif" gif:AnimationBehavior.AutoStart="False"/>
+        <Image x:Name="fireAlarmGif" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Stretch="Fill" gif:AnimationBehavior.SourceUri="/Assets/Sprites/firealarm.gif" gif:AnimationBehavior.AutoStart="False"/>
     </Grid>
 </Window>

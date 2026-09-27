@@ -12,7 +12,6 @@ namespace Noise
         public static MainWindow? mainWindow;
 
         // ---------------------- PUBLIC METHODS ----------------------
-        public static System.Drawing.Rectangle screenBounds => Screen.PrimaryScreen.WorkingArea;
         public static Random rng = new Random();
 
         public static BitmapImage LoadBitmapImage(string uri)
@@ -36,8 +35,20 @@ namespace Noise
         /// </summary>
         public static void RandomPosControl(FrameworkElement element)
         {
-            int x = Global.rng.Next(0, (int)(Global.screenBounds.Width - element.ActualWidth));
-            int y = Global.rng.Next(0, (int)(Global.screenBounds.Height - element.ActualHeight));
+            MainWindow? window = mainWindow;
+            if (window == null) { return; }
+
+            double screenW = window.ActualWidth;
+            double screenH = window.ActualHeight;
+
+            double elemW = element.ActualWidth > 0 ? element.ActualWidth : element.Width;
+            double elemH = element.ActualHeight > 0 ? element.ActualHeight : element.Height;
+
+            int maxX = (int)Math.Max(0, screenW - elemW);
+            int maxY = (int)Math.Max(0, screenH - elemH);
+
+            int x = rng.Next(0, Math.Max(1, maxX));
+            int y = rng.Next(0, Math.Max(1, maxY));
 
             element.Margin = new Thickness(x, y, 0, 0);
         }

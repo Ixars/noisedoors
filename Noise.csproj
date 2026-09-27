@@ -10,6 +10,8 @@
     <Authors>Ixar</Authors>
     <Company>Ixar</Company>
     <Copyright>Ixar</Copyright>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Version>1.0.1</Version>
   </PropertyGroup>
 
   <ItemGroup>

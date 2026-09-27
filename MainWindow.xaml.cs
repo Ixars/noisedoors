@@ -4,12 +4,13 @@ using System.Windows;
 using System.Windows.Forms;
 using System.Windows.Input;
 using System.Windows.Interop;
+using System.Windows.Media;
 using System.Windows.Threading;
 using XamlAnimatedGif;
-using WpfApplication = System.Windows.Application;
 using DrawingPoint = System.Drawing.Point;
 using FormsCursor = System.Windows.Forms.Cursor;
 using FormsKeys = System.Windows.Forms.Keys;
+using WpfApplication = System.Windows.Application;
 
 namespace Noise
 {
@@ -33,6 +34,9 @@ namespace Noise
         private CancellationTokenSource? _spawnDelayCts;
         private Thickness _previousNoisePos;
         private IntPtr _hwnd;
+        
+        private double _dpiScaleX = 1.0;
+        private double _dpiScaleY = 1.0;
 
         private readonly SoundHandle _tvStatic = SoundHandle.Create(Global.GetResourceSteam("Sounds/Noisestatic.wav"));
         private readonly SoundHandle _noiseIdle = SoundHandle.Create(Global.GetResourceSteam("Sounds/Noiseidle.wav"));
@@ -81,14 +85,43 @@ namespace Noise
             Global.mainWindow = this;
         }
 
+        private void UpdateDpiScale()
+        {
+            PresentationSource? source = PresentationSource.FromVisual(this);
+            if (source?.CompositionTarget is { } ct)
+            {
+                _dpiScaleX = ct.TransformToDevice.M11;
+                _dpiScaleY = ct.TransformToDevice.M22;
+            }
+        }
+
+        protected override void OnDpiChanged(DpiScale oldDpi, DpiScale newDpi)
+        {
+            base.OnDpiChanged(oldDpi, newDpi);
+            _dpiScaleX = newDpi.DpiScaleX;
+            _dpiScaleY = newDpi.DpiScaleY;
+        }
+
+        private Point CursorPositionDip()
+        {
+            DrawingPoint p = FormsCursor.Position;
+            return new Point(p.X / _dpiScaleX, p.Y / _dpiScaleY);
+        }
+
+        private Point PointToScreenDip(Visual visual, Point dip)
+        {
+            Point physical = visual.PointToScreen(dip);
+            return new Point(physical.X / _dpiScaleX, physical.Y / _dpiScaleY);
+        }
+
         private void Window_Loaded(object sender, RoutedEventArgs e)
         {
             MakeClickThrough();
+            UpdateDpiScale();
 
-            Left = 0;
-            Top = 0;
-            Width = SystemParameters.PrimaryScreenWidth;
-            Height = SystemParameters.PrimaryScreenHeight;
+            WindowStyle = WindowStyle.None;
+            ResizeMode = ResizeMode.NoResize;
+            ShowInTaskbar = false;
             WindowState = WindowState.Maximized;
 
             _keyboard.KeyPressed += OnKeyPressed;
@@ -141,6 +174,8 @@ namespace Noise
                 Visible = true
             };
         }
+
+        // -------------------- SPAWN LOOP --------------------
 
         private async Task SpawnLoopAsync()
         {
@@ -199,7 +234,7 @@ namespace Noise
 
             AnimationBehavior.GetAnimator(emergeSprite).Play();
 
-            Point tvSpritePos = tvOffSprite.PointToScreen(new Point(0, 0));
+            Point tvSpritePos = PointToScreenDip(tvOffSprite, new Point(0, 0));
 
             _noiseEmerge.Play();
             _noiseEmergeMusic.Play();
@@ -211,8 +246,8 @@ namespace Noise
             await Task.Delay(9 * 1000);
 
             long currentUnixTime = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            DrawingPoint currentCursorPos = FormsCursor.Position;
-            Thickness targetPos = new Thickness(currentCursorPos.X, currentCursorPos.Y, 0, 0);
+            Point targetDip = CursorPositionDip();
+            Thickness targetPos = new Thickness(targetDip.X, targetDip.Y, 0, 0);
 
             for (int i = 1; i < 20; i++)
             {
@@ -267,24 +302,27 @@ namespace Noise
 
         private void TimerTick(object? sender, EventArgs e)
         {
-            NativeMethods.SetWindowPos(_hwnd, NativeMethods.HWND_TOPMOST, 0, 0, 0, 0, NativeMethods.SWP_NOMOVE | NativeMethods.SWP_NOSIZE | NativeMethods.SWP_NOACTIVATE);
+            NativeMethods.SetWindowPos(_hwnd, NativeMethods.HWND_TOPMOST, 0, 0, 0, 0,
+                NativeMethods.SWP_NOMOVE | NativeMethods.SWP_NOSIZE | NativeMethods.SWP_NOACTIVATE);
 
-            DrawingPoint currentCursorPos = FormsCursor.Position;
-            bool cursorMoved = currentCursorPos != _lastCursorPosition;
+            DrawingPoint currentCursorPhysical = FormsCursor.Position;
+            bool cursorMoved = currentCursorPhysical != _lastCursorPosition;
 
-            HandleDeathCheck(currentCursorPos);
-            UpdateTvAndFireAlarm(currentCursorPos);
-            HandleInputAndCursor(currentCursorPos, cursorMoved);
+            Point currentCursorDip = new(currentCursorPhysical.X / _dpiScaleX, currentCursorPhysical.Y / _dpiScaleY);
+
+            HandleDeathCheck(currentCursorDip);
+            UpdateTvAndFireAlarm(currentCursorDip);
+            HandleInputAndCursor(currentCursorDip, cursorMoved);
 
             _previousNoisePos = noiseCursor.Margin;
-            _lastCursorPosition = currentCursorPos;
+            _lastCursorPosition = currentCursorPhysical;
         }
 
-        private void HandleDeathCheck(DrawingPoint currentCursorPos)
+        private void HandleDeathCheck(Point currentCursorDip)
         {
             if (!Global.tvOn) { return; }
 
-            long distance = (long)(Math.Abs(noiseCursor.Margin.Left - currentCursorPos.X) + Math.Abs(noiseCursor.Margin.Top - currentCursorPos.Y));
+            long distance = (long)(Math.Abs(noiseCursor.Margin.Left - currentCursorDip.X) + Math.Abs(noiseCursor.Margin.Top - currentCursorDip.Y));
 
             if (distance >= DeathDistance) { return; }
 
@@ -309,12 +347,12 @@ namespace Noise
             }
         }
 
-        private void UpdateTvAndFireAlarm(DrawingPoint currentCursorPos)
+        private void UpdateTvAndFireAlarm(Point currentCursorDip)
         {
             if (Global.tvOn)
             {
-                double dx = fireAlarmSprite.Margin.Left - currentCursorPos.X;
-                double dy = fireAlarmSprite.Margin.Top - currentCursorPos.Y;
+                double dx = fireAlarmSprite.Margin.Left - currentCursorDip.X;
+                double dy = fireAlarmSprite.Margin.Top - currentCursorDip.Y;
                 double distance = Math.Sqrt(dx * dx + dy * dy);
                 double opacity = Math.Clamp(1.0 - (distance / FireAlarmFadeDistance), 0.0, 1.0);
 
@@ -343,7 +381,7 @@ namespace Noise
             }
         }
 
-        private void HandleInputAndCursor(DrawingPoint currentCursorPos, bool cursorMoved)
+        private void HandleInputAndCursor(Point currentCursorDip, bool cursorMoved)
         {
             if ((cursorMoved || _keyPressedDebounce > 0) && Global.tvOn)
             {
@@ -359,7 +397,10 @@ namespace Noise
                     oldestTime = oldest.Time;
                     nextNoisePos = oldest.Position;
 
-                    _cursorPositions.Add(new CursorSample(currentUnixTime, new Thickness(currentCursorPos.X, currentCursorPos.Y, 0, 0)));
+                    _cursorPositions.Add(new CursorSample(
+                        currentUnixTime,
+                        new Thickness(currentCursorDip.X, currentCursorDip.Y, 0, 0)));
+
                     if (currentUnixTime - oldest.Time > CursorHistoryDelayMs)
                     {
                         noiseCursor.Margin = nextNoisePos;
@@ -369,7 +410,7 @@ namespace Noise
                 else
                 {
                     oldestTime = currentUnixTime;
-                    nextNoisePos = new Thickness(currentCursorPos.X, currentCursorPos.Y, 0, 0);
+                    nextNoisePos = new Thickness(currentCursorDip.X, currentCursorDip.Y, 0, 0);
                     _cursorPositions.Add(new CursorSample(currentUnixTime, nextNoisePos));
                 }
 
