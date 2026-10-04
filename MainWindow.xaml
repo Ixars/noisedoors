@@ -8,9 +8,15 @@
         mc:Ignorable="d"
         Title="Noise" ShowInTaskbar="False" WindowStyle="None" ResizeMode="NoResize" Topmost="True" Background="Transparent" AllowsTransparency="True" Loaded="Window_Loaded" WindowState="Maximized">
     <Grid>
-        <Image x:Name="tvOnSprite" HorizontalAlignment="Center" VerticalAlignment="Bottom" Height="310" Width="232" Source="/Assets/Sprites/tv_on.gif" gif:AnimationBehavior.SourceUri="/Assets/Sprites/tv_on.gif" Opacity="0"/>
-        <Image x:Name="tvOffSprite" HorizontalAlignment="Center" VerticalAlignment="Bottom" Height="310" Width="232" Source="/Assets/Sprites/tv_off.png" Opacity="0"/>
-        <Image x:Name="emergeSprite" HorizontalAlignment="Center" VerticalAlignment="Bottom" Height="310" Width="232" Source="/Assets/Sprites/emerge.gif" gif:AnimationBehavior.SourceUri="/Assets/Sprites/emerge.gif" gif:AnimationBehavior.RepeatBehavior="1x" gif:AnimationBehavior.AutoStart="False" Opacity="0"/>
+        <Popup x:Name="tvPopup" StaysOpen="True" AllowsTransparency="True" IsOpen="True" Drop="FileDropInTv" AllowDrop="True" HorizontalAlignment="Center" VerticalAlignment="Center" Placement="Absolute" MouseLeftButtonDown="tvPopup_MouseLeftButtonDown" MouseMove="tvPopup_MouseMove" MouseLeftButtonUp="tvPopup_MouseLeftButtonUp">
+            <Grid>
+                <Image x:Name="tvOnHijackSprite" Height="310" Width="232" Source="/Assets/Sprites/tv_on.gif" gif:AnimationBehavior.SourceUri="/Assets/Sprites/hijackTv.gif" Opacity="0"/>
+                <Image x:Name="tvOnSprite" Height="310" Width="232" Source="/Assets/Sprites/tv_on.gif" gif:AnimationBehavior.SourceUri="/Assets/Sprites/tv_on.gif" Opacity="0"/>
+                <Image x:Name="tvOffSprite" Height="310" Width="232" Source="/Assets/Sprites/tv_off.png" Opacity="0"/>
+                <Image x:Name="emergeSprite" Height="310" Width="232" Source="/Assets/Sprites/emerge.gif" gif:AnimationBehavior.SourceUri="/Assets/Sprites/emerge.gif" gif:AnimationBehavior.RepeatBehavior="1x" gif:AnimationBehavior.AutoStart="False" Opacity="0"/>
+                <Image x:Name="hijackEmergeSprite" Height="310" Width="232" Source="/Assets/Sprites/hijackemerge.gif" gif:AnimationBehavior.SourceUri="/Assets/Sprites/hijackemerge.gif" gif:AnimationBehavior.RepeatBehavior="1x" gif:AnimationBehavior.AutoStart="False" Opacity="0"/>
+            </Grid>
+        </Popup>
 
         <Image x:Name="noiseCursor" HorizontalAlignment="Left" VerticalAlignment="Top" Height="32" Width="32" Source="/Assets/Sprites/pausecursor.png" gif:AnimationBehavior.SourceUri="/Assets/Sprites/cursor.gif" Opacity="0"/>
 
@@ -18,7 +24,8 @@
             <Image x:Name="fireAlarmSprite" Height="59" Width="40" Source="/Assets/Sprites/firealarm.png" MouseLeftButtonDown="fireAlarmSprite_MouseDown"/>
         </Popup>
 
-        <Image x:Name="jumpscareGif" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Stretch="Fill" gif:AnimationBehavior.SourceUri="/Assets/Sprites/jumpscare.gif" gif:AnimationBehavior.AutoStart="False"/>
-        <Image x:Name="fireAlarmGif" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Stretch="Fill" gif:AnimationBehavior.SourceUri="/Assets/Sprites/firealarm.gif" gif:AnimationBehavior.AutoStart="False"/>
+        <Image x:Name="jumpscareGif" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Stretch="Fill" gif:AnimationBehavior.RepeatBehavior="1x" gif:AnimationBehavior.SourceUri="/Assets/Sprites/jumpscare.gif" gif:AnimationBehavior.AutoStart="False"/>
+        <Image x:Name="hijackJumpscareGif" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Stretch="Fill" gif:AnimationBehavior.RepeatBehavior="1x" gif:AnimationBehavior.SourceUri="/Assets/Sprites/hijackJumpscare.gif" gif:AnimationBehavior.AutoStart="False"/>
+        <Image x:Name="fireAlarmGif" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Stretch="Fill" gif:AnimationBehavior.RepeatBehavior="1x" gif:AnimationBehavior.SourceUri="/Assets/Sprites/firealarm.gif" gif:AnimationBehavior.AutoStart="False"/>
     </Grid>
 </Window>

@@ -10,9 +10,18 @@ namespace Noise
     {
         public static bool tvOn = false;
         public static MainWindow? mainWindow;
+        public static bool isHijacked = false;
+        public static bool hijackPause = false;
+        public static bool changingState = false;
 
         // ---------------------- PUBLIC METHODS ----------------------
         public static Random rng = new Random();
+        public static string[] ransomHashes = {
+            "b38d822c7b83a5fa5c20dccf22188529f9ad75caa1e15885b994f5787f733bb8",
+            "7abedb7bd160a5b1ef7467dd58dd70b6aa50b2983f54c7dab0cd100adb645dcc",
+            "0f2051005cf9120f471f4d8f3c92e366eb330200c539c5019cfda5be6cd8435e",
+            "390cd31ac20cdeff0127d074aff0728157fbc5ef1f93e8ba98042bf22c1c6fc6"
+        };
 
         public static BitmapImage LoadBitmapImage(string uri)
         {

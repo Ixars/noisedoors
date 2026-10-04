@@ -6,16 +6,19 @@ namespace Noise
     // I'll make a better and good one laterrrr
     public class SoundHandle
     {
-        private readonly WaveOut _waveOut;
-        private readonly WaveFileReader _reader;
+        private readonly WaveOut? _waveOut;
+        private readonly WaveFileReader? _reader;
         private bool _disposed;
         private bool _looping;
 
         public SoundHandle(WaveOut waveOut, WaveFileReader reader)
         {
-            _waveOut = waveOut;
-            _reader = reader;
-            _waveOut.PlaybackStopped += OnPlaybackStopped;
+            try
+            {
+                _waveOut = waveOut;
+                _reader = reader;
+                _waveOut.PlaybackStopped += OnPlaybackStopped;
+            } catch { } // Probably NAudio device unavailable
         }
 
         public static SoundHandle Create(Stream wavStream)
@@ -28,21 +31,22 @@ namespace Noise
             return new SoundHandle(waveOut, reader);
         }
 
-        public void Play() => _waveOut.Play();
-        public void Pause() => _waveOut.Pause();
+        public void Play() => _waveOut?.Play();
+        public void Pause() => _waveOut?.Pause();
+        public void Reset() => _reader?.Position = 0;
 
         public void PlayLooping()
         {
             _looping = true;
-            _waveOut.Play();
+            _waveOut?.Play();
         }
 
         private void OnPlaybackStopped(object s, StoppedEventArgs e)
         {
-            _reader.Position = 0;
+            _reader?.Position = 0;
             if (_looping && !_disposed)
             {
-                _waveOut.Play();
+                _waveOut?.Play();
                 return;
             }
             //DisposeOnce();
@@ -51,7 +55,7 @@ namespace Noise
         public void Stop()
         {
             _looping = false;
-            try { _waveOut.Stop(); } catch { }
+            try { _waveOut?.Stop(); } catch { }
             DisposeOnce();
         }
 
@@ -59,8 +63,8 @@ namespace Noise
         {
             if (_disposed) return;
             _disposed = true;
-            _waveOut.Dispose();
-            _reader.Dispose();
+            _waveOut?.Dispose();
+            _reader?.Dispose();
         }
     }
 }

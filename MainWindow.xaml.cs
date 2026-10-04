@@ -1,6 +1,9 @@
 ﻿using System.Diagnostics;
+using System.IO;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Forms;
 using System.Windows.Input;
 using System.Windows.Interop;
@@ -24,6 +27,10 @@ namespace Noise
         private const double FireAlarmFadeDistance = 100.0;
         private const int IdleHistoryShiftMs = 10;
 
+        private const int GWL_EXSTYLE = -20;
+        private const int WS_EX_TRANSPARENT = 0x00000020;
+        private const int WS_EX_LAYERED = 0x00080000;
+
         private readonly DispatcherTimer _timer;
         private readonly List<CursorSample> _cursorPositions = new();
         private readonly List<KeySample> _pressedKeys = new();
@@ -34,7 +41,8 @@ namespace Noise
         private CancellationTokenSource? _spawnDelayCts;
         private Thickness _previousNoisePos;
         private IntPtr _hwnd;
-        
+        private int _fireAlarmLeft;
+
         private double _dpiScaleX = 1.0;
         private double _dpiScaleY = 1.0;
 
@@ -48,7 +56,16 @@ namespace Noise
         private readonly SoundHandle _noiseDeath1 = SoundHandle.Create(Global.GetResourceSteam("Sounds/Noise_death_1.wav"));
         private readonly SoundHandle _noiseDeathMusic = SoundHandle.Create(Global.GetResourceSteam("Sounds/Noise_death_music.wav"));
         private readonly SoundHandle _noisePause = SoundHandle.Create(Global.GetResourceSteam("Sounds/Noisepause2.wav"));
+        private readonly SoundHandle _hijackIdle = SoundHandle.Create(Global.GetResourceSteam("Sounds/Hijackidle.wav"));
+        private readonly SoundHandle _hijackEmerge = SoundHandle.Create(Global.GetResourceSteam("Sounds/hijackemerge.wav"));
+        private readonly SoundHandle _hijackPause = SoundHandle.Create(Global.GetResourceSteam("Sounds/Hijackpause.wav"));
+        private readonly SoundHandle _hijackSong = SoundHandle.Create(Global.GetResourceSteam("Sounds/Hijacksong.wav"));
+        private readonly SoundHandle _hijackJumpscare = SoundHandle.Create(Global.GetResourceSteam("Sounds/hijackJumpscare.wav"));
         private readonly Keyboard _keyboard = new();
+
+        private Point _dragStartScreen;
+        private double _dragStartOffset;
+        private bool _dragging;
 
         private sealed class CursorSample
         {
@@ -87,8 +104,7 @@ namespace Noise
 
         private void UpdateDpiScale()
         {
-            PresentationSource? source = PresentationSource.FromVisual(this);
-            if (source?.CompositionTarget is { } ct)
+            if (PresentationSource.FromVisual(this)?.CompositionTarget is { } ct)
             {
                 _dpiScaleX = ct.TransformToDevice.M11;
                 _dpiScaleY = ct.TransformToDevice.M22;
@@ -124,6 +140,9 @@ namespace Noise
             ShowInTaskbar = false;
             WindowState = WindowState.Maximized;
 
+            tvPopup.HorizontalOffset = (ActualWidth - tvOffSprite.Width) / 2;
+            tvPopup.VerticalOffset = (ActualHeight - tvOffSprite.Height);
+
             _keyboard.KeyPressed += OnKeyPressed;
             Closing += OnClosing;
             Closed += OnClosed;
@@ -133,16 +152,47 @@ namespace Noise
             SetupTickTimer();
             SetupTrayIcon();
 
-            if (!Config.LoadConfig()) { new ConfigWindow().Show(); }
+            if (!Config.LoadConfig()) new ConfigWindow().Show();
             _ = SpawnLoopAsync();
+        }
+
+        private void tvPopup_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            UIElement el = (UIElement)sender;
+
+            _dragStartScreen = el.PointToScreen(e.GetPosition(el));
+            _dragStartOffset = tvPopup.HorizontalOffset;
+            _dragging = true;
+
+            el.CaptureMouse();
+            e.Handled = true;
+        }
+
+        private void tvPopup_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+        {
+            if (!_dragging) return;
+
+            _dragging = false;
+            ((UIElement)sender).ReleaseMouseCapture();
+            e.Handled = true;
+        }
+
+        private void tvPopup_MouseMove(object sender, System.Windows.Input.MouseEventArgs e)
+        {
+            if (!_dragging) return;
+
+            UIElement el = (UIElement)sender;
+            Point current = el.PointToScreen(e.GetPosition(el));
+
+            tvPopup.HorizontalOffset = _dragStartOffset + (current.X - _dragStartScreen.X);
         }
 
         private void OnKeyPressed(FormsKeys key)
         {
             Dispatcher.BeginInvoke(new Action(() =>
             {
-                long currentUnixTime = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-                _pressedKeys.Add(new KeySample(currentUnixTime, key));
+                long now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                _pressedKeys.Add(new KeySample(now, key));
                 _keyPressedDebounce++;
             }));
         }
@@ -162,7 +212,6 @@ namespace Noise
         private void SetupTrayIcon()
         {
             ContextMenuStrip trayMenu = new ContextMenuStrip();
-
             trayMenu.Items.Add("Configuration").Click += (s, e) => new ConfigWindow().Show();
             trayMenu.Items.Add("Close").Click += (s, e) => WpfApplication.Current.Shutdown();
 
@@ -215,55 +264,79 @@ namespace Noise
             finally
             {
                 if (ReferenceEquals(_spawnDelayCts, cts))
-                {
                     _spawnDelayCts = null;
-                }
             }
         }
 
         public async Task NoiseEmerge()
         {
-            if (Global.tvOn) { return; }
+            if (Global.tvOn) return;
+
+            Global.changingState = true;
 
             _cursorPositions.Clear();
             _pressedKeys.Clear();
 
             tvOffSprite.Opacity = 0;
             tvOnSprite.Opacity = 0;
-            emergeSprite.Opacity = 1;
 
-            AnimationBehavior.GetAnimator(emergeSprite).Play();
+            bool wasHijackBefore = Global.isHijacked;
+            int waitTime;
+
+            if (Global.isHijacked)
+            {
+                waitTime = 13 * 1000;
+                emergeSprite.Opacity = 0;
+                hijackEmergeSprite.Opacity = 1;
+                AnimationBehavior.GetAnimator(hijackEmergeSprite).Play();
+
+                _hijackEmerge.Play();
+            }
+            else
+            {
+                waitTime = 9 * 1000;
+                _noiseEmerge.Play();
+                _noiseEmergeMusic.Play();
+
+                emergeSprite.Opacity = 1;
+                hijackEmergeSprite.Opacity = 0;
+                AnimationBehavior.GetAnimator(emergeSprite).Play();
+            }
+
+            await Task.Delay(waitTime);
+
+            if (Global.isHijacked && !wasHijackBefore)
+            {
+                _ = NoiseEmerge();
+                return;
+            }
 
             Point tvSpritePos = PointToScreenDip(tvOffSprite, new Point(0, 0));
-
-            _noiseEmerge.Play();
-            _noiseEmergeMusic.Play();
-
             noiseCursor.Margin = new Thickness(tvSpritePos.X + 120, tvSpritePos.Y + 250, 0, 0);
 
+            _fireAlarmLeft = Config.FireAlarmAmount;
             Global.RandomPosControl(fireAlarmSprite);
-
-            await Task.Delay(9 * 1000);
 
             long currentUnixTime = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             Point targetDip = CursorPositionDip();
-            Thickness targetPos = new Thickness(targetDip.X, targetDip.Y, 0, 0);
+            Thickness targetPos = new(targetDip.X, targetDip.Y, 0, 0);
 
             for (int i = 1; i < 20; i++)
             {
                 long t = currentUnixTime - (10 * (20 - i));
 
-                Thickness pos = new Thickness(
+                Thickness pos = new(
                     Global.Lerp(noiseCursor.Margin.Left, targetPos.Left, i / 20f),
                     Global.Lerp(noiseCursor.Margin.Top, targetPos.Top, i / 20f),
-                    0,
-                    0);
+                    0, 0);
 
                 _cursorPositions.Add(new CursorSample(t, pos));
             }
 
             emergeSprite.Opacity = 0;
+            hijackEmergeSprite.Opacity = 0;
             Global.tvOn = true;
+            Global.changingState = false;
         }
 
         private static class NativeMethods
@@ -288,10 +361,8 @@ namespace Noise
         {
             _hwnd = new WindowInteropHelper(this).Handle;
 
-            int extendedStyle = GetWindowLong(_hwnd, -20);
-            SetWindowLong(_hwnd, -20, extendedStyle |
-                0x00000020 | // WS_EX_TRANSPARENT
-                0x00080000); // WS_EX_LAYERED
+            int extendedStyle = GetWindowLong(_hwnd, GWL_EXSTYLE);
+            SetWindowLong(_hwnd, GWL_EXSTYLE, extendedStyle | WS_EX_TRANSPARENT | WS_EX_LAYERED);
         }
 
         private void SetupTickTimer()
@@ -310,7 +381,7 @@ namespace Noise
 
             Point currentCursorDip = new(currentCursorPhysical.X / _dpiScaleX, currentCursorPhysical.Y / _dpiScaleY);
 
-            HandleDeathCheck(currentCursorDip);
+            _ = HandleDeathCheck(currentCursorDip);
             UpdateTvAndFireAlarm(currentCursorDip);
             HandleInputAndCursor(currentCursorDip, cursorMoved);
 
@@ -318,32 +389,56 @@ namespace Noise
             _lastCursorPosition = currentCursorPhysical;
         }
 
-        private void HandleDeathCheck(Point currentCursorDip)
+        private async Task HandleDeathCheck(Point currentCursorDip)
         {
-            if (!Global.tvOn) { return; }
+            if (!Global.tvOn) return;
 
-            long distance = (long)(Math.Abs(noiseCursor.Margin.Left - currentCursorDip.X) + Math.Abs(noiseCursor.Margin.Top - currentCursorDip.Y));
+            long distance = (long)(Math.Abs(noiseCursor.Margin.Left - currentCursorDip.X) +
+                                   Math.Abs(noiseCursor.Margin.Top - currentCursorDip.Y));
 
-            if (distance >= DeathDistance) { return; }
+            if (distance >= DeathDistance) return;
 
             Global.tvOn = false;
 
-            AnimationBehavior.GetAnimator(jumpscareGif).Play();
-            AnimationBehavior.SetRepeatBehavior(jumpscareGif, new System.Windows.Media.Animation.RepeatBehavior(1));
+            if (Global.isHijacked)
+            {
+                AnimationBehavior.GetAnimator(hijackJumpscareGif).Play();
+                _hijackJumpscare.Play();
+                await Task.Delay(200);
+            }
+            else
+            {
+                AnimationBehavior.GetAnimator(jumpscareGif).Play();
+                _noiseDeath1.Play();
+                _noiseDeathMusic.Play();
+            }
 
-            _noiseDeath1.Play();
-            _noiseDeathMusic.Play();
+            Global.isHijacked = false;
+
+            await Task.Delay(5200);
 
             if (Config.ExecCMDOnDeath)
             {
-                string cmd = Config.CMDOnDeath.Split(' ')[0];
-                string args = Config.CMDOnDeath[cmd.Length..];
-                Process.Start(cmd, args);
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = "cmd.exe",
+                    Arguments = "/c " + Config.CMDOnDeath,
+                    UseShellExecute = true,
+                    CreateNoWindow = true,
+                    ErrorDialog = true
+                });
             }
 
             if (Config.CrashOnDeath)
             {
-                Process.Start("shutdown", "/s /t 0");
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = "cmd.exe",
+                    Arguments = "/c shutdown /s /t 0",
+                    UseShellExecute = true,
+                    CreateNoWindow = true,
+                    ErrorDialog = true
+                });
             }
         }
 
@@ -354,13 +449,13 @@ namespace Noise
                 double dx = fireAlarmSprite.Margin.Left - currentCursorDip.X;
                 double dy = fireAlarmSprite.Margin.Top - currentCursorDip.Y;
                 double distance = Math.Sqrt(dx * dx + dy * dy);
-                double opacity = Math.Clamp(1.0 - (distance / FireAlarmFadeDistance), 0.0, 1.0);
 
-                fireAlarmSprite.Opacity = opacity;
+                fireAlarmSprite.Opacity = Math.Clamp(1.0 - (distance / FireAlarmFadeDistance), 0.0, 1.0);
 
-                if (tvOnSprite.Opacity != 1)
+                Image targetTvSprite = Global.isHijacked ? tvOnHijackSprite : tvOnSprite;
+                if (targetTvSprite.Opacity != 1)
                 {
-                    tvOnSprite.Opacity = 1;
+                    targetTvSprite.Opacity = 1;
                     tvOffSprite.Opacity = 0;
                     _tvStatic.PlayLooping();
                 }
@@ -375,6 +470,7 @@ namespace Noise
                 if (tvOffSprite.Opacity != 1)
                 {
                     tvOnSprite.Opacity = 0;
+                    tvOnHijackSprite.Opacity = 0;
                     tvOffSprite.Opacity = 1;
                     _tvStatic.Pause();
                 }
@@ -383,77 +479,149 @@ namespace Noise
 
         private void HandleInputAndCursor(Point currentCursorDip, bool cursorMoved)
         {
-            if ((cursorMoved || _keyPressedDebounce > 0) && Global.tvOn)
+            long currentUnixTime = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            bool debounced = true;
+
+            float actualNoiseSpeed = Global.isHijacked ? (float)Config.NoiseSpeed / 2f : (float)Config.NoiseSpeed;
+            double speed = Math.Max(0.01, actualNoiseSpeed);
+
+            if (_cursorPositions.Count > 2)
             {
-                if (_keyPressedDebounce > 0) { _keyPressedDebounce--; }
-                long currentUnixTime = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                CursorSample youngest = _cursorPositions[^1];
 
-                Thickness nextNoisePos;
-                long oldestTime;
+                double storeDebounce = 10.0;
+                if (_cursorPositions.Count > 100.0 / speed)
+                    storeDebounce = 200.0 * speed;
 
-                if (_cursorPositions.Count > 0)
+                if (currentUnixTime < youngest.Time + storeDebounce)
+                    debounced = false;
+            }
+
+            if (cursorMoved && Global.tvOn && debounced)
+            {
+                _cursorPositions.Add(new CursorSample(currentUnixTime, new Thickness(currentCursorDip.X, currentCursorDip.Y, 0, 0)));
+            }
+
+            if (Global.isHijacked && Global.tvOn)
+            {
+                _hijackSong.PlayLooping();
+            }
+            else
+            {
+                _hijackSong.Reset();
+                _hijackSong.Pause();
+            }
+
+            bool active = ((!Global.isHijacked && (cursorMoved || _keyPressedDebounce > 0)) || (Global.isHijacked && !Global.hijackPause)) && Global.tvOn;
+
+            if (!active)
+            {
+                _noiseIdle.Pause();
+                _noiseThreat.Pause();
+                _hijackIdle.Pause();
+
+                if (AnimationBehavior.GetSourceUri(noiseCursor) != null)
                 {
-                    CursorSample oldest = _cursorPositions[0];
-                    oldestTime = oldest.Time;
-                    nextNoisePos = oldest.Position;
+                    AnimationBehavior.SetSourceUri(noiseCursor, null);
 
-                    _cursorPositions.Add(new CursorSample(
-                        currentUnixTime,
-                        new Thickness(currentCursorDip.X, currentCursorDip.Y, 0, 0)));
-
-                    if (currentUnixTime - oldest.Time > CursorHistoryDelayMs)
+                    if (Global.isHijacked)
                     {
-                        noiseCursor.Margin = nextNoisePos;
-                        _cursorPositions.RemoveAt(0);
+                        _hijackPause.Play();
+                        noiseCursor.Source = Global.LoadBitmapImage("pack://application:,,,/Assets/Sprites/pausehijack.png");
+                    }
+                    else
+                    {
+                        _noisePause.Play();
+                        noiseCursor.Source = Global.LoadBitmapImage("pack://application:,,,/Assets/Sprites/pausecursor.png");
                     }
                 }
-                else
-                {
-                    oldestTime = currentUnixTime;
-                    nextNoisePos = new Thickness(currentCursorDip.X, currentCursorDip.Y, 0, 0);
-                    _cursorPositions.Add(new CursorSample(currentUnixTime, nextNoisePos));
-                }
 
-                if (_pressedKeys.Count > 0)
-                {
-                    KeySample oldestKey = _pressedKeys[0];
+                for (int i = 0; i < _cursorPositions.Count; i++)
+                    _cursorPositions[i].Time += IdleHistoryShiftMs;
 
-                    if (currentUnixTime - oldestKey.Time > CursorHistoryDelayMs)
-                    {
-                        Keyboard.KeyPress(oldestKey.Key);
-                        _pressedKeys.RemoveAt(0);
-                    }
-                }
+                for (int i = 0; i < _pressedKeys.Count; i++)
+                    _pressedKeys[i].Time += IdleHistoryShiftMs;
 
-                long noiseMagnitude = (long)(Math.Abs(_previousNoisePos.Left - nextNoisePos.Left) + Math.Abs(_previousNoisePos.Top - nextNoisePos.Top));
+                return;
+            }
 
-                if (noiseMagnitude < NoiseIdleThreshold)
+            if (Global.isHijacked && Global.rng.Next(0, 500) <= 1)
+            {
+                new Thread(async () =>
                 {
-                    _noiseIdle.PlayLooping();
-                    _noiseThreat.Pause();
-                    SetCursorAnimation(noiseCursor, "/Assets/Sprites/cursor.gif");
-                }
-                else if (currentUnixTime - oldestTime > ThreatDelayMs)
+                    Global.hijackPause = true;
+                    await Task.Delay(Global.rng.Next(100, 1000));
+                    Global.hijackPause = false;
+                }).Start();
+            }
+
+            if (_keyPressedDebounce > 0)
+                _keyPressedDebounce--;
+
+            Thickness nextNoisePos;
+            long oldestTime;
+
+            if (_cursorPositions.Count > 0)
+            {
+                CursorSample oldest = _cursorPositions[0];
+                oldestTime = oldest.Time;
+                nextNoisePos = oldest.Position;
+
+                double usedCursorHistoryDelayMs = CursorHistoryDelayMs;
+                if (Global.isHijacked)
+                    usedCursorHistoryDelayMs /= 2.0;
+
+                if (_cursorPositions.Count > 400.0 / speed)
+                    usedCursorHistoryDelayMs /= 4.0 / speed;
+
+                if (currentUnixTime - oldest.Time > usedCursorHistoryDelayMs / speed)
                 {
-                    _noiseIdle.Pause();
-                    _noiseThreat.PlayLooping();
-                    SetCursorAnimation(noiseCursor, "/Assets/Sprites/ffcursor.gif");
+                    noiseCursor.Margin = nextNoisePos;
+                    _cursorPositions.RemoveAt(0);
                 }
             }
             else
             {
-                _noiseIdle.Pause();
-                _noiseThreat.Pause();
+                oldestTime = currentUnixTime;
+                nextNoisePos = new Thickness(currentCursorDip.X, currentCursorDip.Y, 0, 0);
+            }
 
-                if (AnimationBehavior.GetSourceUri(noiseCursor) != null)
+            if (_pressedKeys.Count > 0)
+            {
+                KeySample oldestKey = _pressedKeys[0];
+
+                if (currentUnixTime - oldestKey.Time > CursorHistoryDelayMs / speed)
                 {
-                    _noisePause.Play();
-                    AnimationBehavior.SetSourceUri(noiseCursor, null);
-                    noiseCursor.Source = Global.LoadBitmapImage("pack://application:,,,/Assets/Sprites/pausecursor.png");
+                    Keyboard.KeyPress(oldestKey.Key);
+                    _pressedKeys.RemoveAt(0);
                 }
+            }
 
-                for (int i = 0; i < _cursorPositions.Count; i++) { _cursorPositions[i].Time += IdleHistoryShiftMs; }
-                for (int i = 0; i < _pressedKeys.Count; i++) { _pressedKeys[i].Time += IdleHistoryShiftMs; }
+            long noiseMagnitude = (long)(Math.Abs(_previousNoisePos.Left - nextNoisePos.Left) + Math.Abs(_previousNoisePos.Top - nextNoisePos.Top));
+            if (noiseMagnitude < NoiseIdleThreshold)
+            {
+                if (Global.isHijacked)
+                {
+                    SetCursorAnimation(noiseCursor, "/Assets/Sprites/hijackcursor.gif");
+                    _noiseIdle.Pause();
+                    _hijackIdle.PlayLooping();
+                    _noiseThreat.Pause();
+                }
+                else
+                {
+                    _noiseIdle.PlayLooping();
+                    _hijackIdle.Pause();
+                    _noiseThreat.Pause();
+                    SetCursorAnimation(noiseCursor, "/Assets/Sprites/cursor.gif");
+                }
+            }
+            else if (currentUnixTime - oldestTime > ThreatDelayMs)
+            {
+                _noiseIdle.Pause();
+                _hijackIdle.Pause();
+                _noiseThreat.PlayLooping();
+
+                SetCursorAnimation(noiseCursor, Global.isHijacked ? "/Assets/Sprites/ffhijack.gif" : "/Assets/Sprites/ffcursor.gif");
             }
         }
 
@@ -462,18 +630,46 @@ namespace Noise
             Uri? current = AnimationBehavior.GetSourceUri(image);
 
             if (current == null || current.OriginalString != relativeUri)
-            { AnimationBehavior.SetSourceUri(image, new Uri(relativeUri, UriKind.Relative)); }
+AnimationBehavior.SetSourceUri(image, new Uri(relativeUri, UriKind.Relative));
         }
 
         private void fireAlarmSprite_MouseDown(object sender, MouseButtonEventArgs e)
         {
-            Global.tvOn = false;
-
             _fireAlarmPull.Play();
-            _fireAlarm.Play();
+            fireAlarmSprite.Opacity = 0;
+            _fireAlarmLeft--;
+            Global.RandomPosControl(fireAlarmSprite);
 
-            AnimationBehavior.GetAnimator(fireAlarmGif).Play();
-            AnimationBehavior.SetRepeatBehavior(fireAlarmGif, new System.Windows.Media.Animation.RepeatBehavior(1));
+            if (_fireAlarmLeft <= 0)
+            {
+                Global.tvOn = false;
+                Global.isHijacked = false;
+
+                _fireAlarm.Play();
+                AnimationBehavior.GetAnimator(fireAlarmGif).Play();
+            }
+        }
+
+        private void FileDropInTv(object sender, System.Windows.DragEventArgs e)
+        {
+            string filePath = ((string[])e.Data.GetData(System.Windows.DataFormats.FileDrop))[0];
+
+            if (Path.GetExtension(filePath) != ".exe" || Global.isHijacked) return;
+
+            using SHA256 sha256 = SHA256.Create();
+            using FileStream stream = File.OpenRead(filePath);
+
+            byte[] hash = sha256.ComputeHash(stream);
+            string hashString = BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+
+            if (Global.ransomHashes.Contains(hashString))
+            {
+                Global.tvOn = false;
+                Global.isHijacked = true;
+
+                if (!Global.changingState)
+                    _ = NoiseEmerge();
+            }
         }
     }
 }

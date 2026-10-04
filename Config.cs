@@ -117,6 +117,20 @@ public static class Config
         set { _cache[nameof(MaxSpawnDelay)] = value; }
     }
 
+    [ConfigField(1)]
+    public static int NoiseSpeed
+    {
+        get => GetOrDefault<int>(nameof(NoiseSpeed));
+        set { _cache[nameof(NoiseSpeed)] = value; }
+    }
+
+    [ConfigField(1)]
+    public static int FireAlarmAmount
+    {
+        get => GetOrDefault<int>(nameof(FireAlarmAmount));
+        set { _cache[nameof(FireAlarmAmount)] = value; }
+    }
+
     // ------------------- Death -------------------
 
     [ConfigField(false)]
